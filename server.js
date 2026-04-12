@@ -1,5 +1,4 @@
 require('dotenv').config();
-const fetch = require("node-fetch");
 const express   = require('express');
 const session   = require('express-session');
 const passport  = require('passport');
@@ -14,53 +13,82 @@ const itemsRoutes     = require('./routes/items');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Connect MongoDB ────────────────────────────────────
-mongoose.connect(process.env.MONGODB_URI)
+// ── Trust proxy (สำคัญสำหรับ Render) ──
+app.set('trust proxy', 1);
+
+// ── Connect MongoDB ────────────────────
+if (!process.env.MONGODB_URI) {
+  console.error("❌ MONGODB_URI is missing");
+} else {
+  mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log('✅ MongoDB connected!'))
   .catch(err => console.error('❌ MongoDB error:', err.message));
+}
 
-// ── Middleware ─────────────────────────────────────────
-app.use(cors({ origin: '*', credentials: true }));
+// ── Middleware ─────────────────────────
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'defuse_th_secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 },
+  cookie: {
+    secure: true,        // Render ใช้ HTTPS
+    sameSite: 'none',    // ต้องใช้คู่กับ secure:true
+    maxAge: 24 * 60 * 60 * 1000,
+  },
 }));
+
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ── Routes ─────────────────────────────────────────────
+// ── Routes ─────────────────────────────
 app.use('/auth',      authRoutes);
 app.use('/inventory', inventoryRoutes);
 app.use('/market',    marketRoutes);
 app.use('/items',     itemsRoutes);
 
-// ✅ Steam route
+// ── Steam API ──────────────────────────
 app.get("/steam/price-history", async (req, res) => {
-  const name = req.query.name;
-
   try {
+    const name = req.query.name;
+
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
     const url = `https://steamcommunity.com/market/pricehistory/?appid=730&market_hash_name=${encodeURIComponent(name)}`;
 
     const response = await fetch(url, {
-  headers: {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json",
-  },
-});
-    const data = await response.json();
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+      },
+    });
 
+    if (!response.ok) {
+      throw new Error(`Steam API error: ${response.status}`);
+    }
+
+    const data = await response.json();
     res.json(data);
+
   } catch (err) {
-    console.error("Steam API error:", err);
+    console.error("Steam API error:", err.message);
     res.status(500).json({ error: "steam fetch error" });
   }
 });
 
-// ── Health Check ───────────────────────────────────────
+// ── Health Check ───────────────────────
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
@@ -69,7 +97,13 @@ app.get('/', (req, res) => {
   });
 });
 
-// ── Start ──────────────────────────────────────────────
+// ── Global Error Handler ───────────────
+app.use((err, req, res, next) => {
+  console.error("🔥 Server Error:", err.stack);
+  res.status(500).json({ error: "Internal Server Error" });
+});
+
+// ── Start Server ──────────────────────
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
