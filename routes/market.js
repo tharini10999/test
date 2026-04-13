@@ -286,4 +286,23 @@ router.post('/deposit', async (req, res) => {
   }
 });
 
+// ── GET /market/price-external/:name ─────────────────────
+router.get('/price-external/:name', async (req, res) => {
+  try {
+    const name = req.params.name;
+
+    const result = await getExternalPrice(name);
+
+    if (result) {
+      return res.json(result);
+    }
+
+    return res.json({ success: false });
+
+  } catch (err) {
+    console.error('[price-external]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
