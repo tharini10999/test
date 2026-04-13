@@ -5,6 +5,37 @@ const Listing = require('../models/Listing');
 const Order   = require('../models/Order');
 const User    = require('../models/User');
 
+// 🔥 External API cache
+let externalCache = null;
+let externalCacheTs = 0;
+const EXTERNAL_TTL = 60 * 1000; // 1 นาที
+
+async function getExternalPrice(name) {
+  try {
+    // 🔥 cache กันยิง API ซ้ำ
+    if (!externalCache || Date.now() - externalCacheTs > EXTERNAL_TTL) {
+      const res = await fetch('https://api.csgoskins.gg/skins');
+      externalCache = await res.json();
+      externalCacheTs = Date.now();
+      console.log("✅ External API loaded:", externalCache.length);
+    }
+
+    const item = externalCache.find(i => i.market_hash_name === name);
+
+    if (!item) return null;
+
+    return {
+      success: true,
+      lowestThb: Math.round(item.price * 35),
+      source: 'external'
+    };
+
+  } catch (e) {
+    console.log("❌ External API error:", e.message);
+    return null;
+  }
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'defuse_th_jwt_2024';
 
 const verifyToken = (req) => {
